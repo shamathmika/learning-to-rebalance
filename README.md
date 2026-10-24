@@ -14,3 +14,10 @@ python data/download.py              # Bay Wheels trips Oct 2025 - Sep 2026 + GB
 python data/clean.py                 # SF dock-to-dock trips -> data/processed/trips.parquet, stations.csv
 python data/build_demand.py          # per-station departures/arrivals per 30-min step -> data/processed/demand_top20.npz
 ```
+
+## Environment and baselines
+
+```
+python test_env.py                   # env checks
+python baselines.py                  # no-rebalancing and greedy on held-out test days
+```
