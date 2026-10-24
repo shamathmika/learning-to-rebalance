@@ -224,3 +224,4 @@ data/raw/
 data/processed/
 *.gdoc
 .DS_Store
+results/
