@@ -4,6 +4,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from build_calendar import build_calendar
+
 PROCESSED = Path(__file__).parent / "processed"
 STEPS_PER_DAY = 48
 TEST_DAYS_PER_MONTH = 7
@@ -46,6 +48,8 @@ def main():
     arrivals = counts(arr.ended_at, arr.end_station_id, ids, days)
 
     dates = pd.DatetimeIndex(days)
+    cal = build_calendar(args.start, args.end).reindex(dates)
+    cal.to_csv(PROCESSED / "calendar.csv")
     month_end = dates + pd.offsets.MonthEnd(0)
     is_test = (month_end - dates).days < TEST_DAYS_PER_MONTH
 
@@ -56,12 +60,21 @@ def main():
         arrivals=arrivals,
         dates=dates.strftime("%Y-%m-%d").to_numpy(dtype=str),
         weekday=dates.day_of_week < 5,
+        holiday=cal.holiday.to_numpy(),
+        workday=cal.workday.to_numpy(),
+        prcp_in=cal.prcp_in.to_numpy(dtype=np.float32),
+        tmax_f=cal.tmax_f.to_numpy(dtype=np.float32),
+        rainy=cal.rainy.to_numpy(),
         is_test=is_test,
         station_ids=ids.astype(str),
         capacity=stations.capacity.to_numpy(),
         distance_km=haversine_km(stations.lat.to_numpy(), stations.lon.to_numpy()),
     )
     print(f"{out.name}: {len(days)} days ({(~is_test).sum()} train / {is_test.sum()} test), {len(ids)} stations")
+    test_holidays = cal[is_test & cal.holiday.to_numpy()]
+    print(f"holidays: {cal.holiday.sum()} total, {len(test_holidays)} in test days "
+          f"({', '.join(test_holidays.holiday_name)})")
+    print(f"rainy days: {cal.rainy.sum()} total, {(is_test & cal.rainy.to_numpy()).sum()} in test days")
     print(f"departures/day {departures.sum() / len(days):.0f}, arrivals/day {arrivals.sum() / len(days):.0f}")
 
 
