@@ -120,19 +120,49 @@ def plot_curve(rewards, baselines_train, path):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    smooth = pd.Series(rewards).rolling(200, min_periods = 50).mean()
-    fig, ax = plt.subplots(figsize = (7, 4))
-    ax.plot(np.arange(len(rewards)) * BikeRebalanceEnv.STEPS_PER_DAY, smooth, color = "#7a4fc9", linewidth = 2, label = "Q-learning")
-    for (name, value), color in zip(baselines_train.items(), ["#2a78d6", "#eb6834"]):
-        ax.axhline(value, color = color, linestyle = "--", linewidth = 2, label = name)
-    ax.set_xlabel("Training timesteps")
-    ax.set_ylabel("Episode reward (200-episode mean)")
-    ax.set_title("Tabular Q-learning learning curve on training days", loc = "left")
-    ax.legend(frameon = False)
-    for side in ["top", "right"]:
-        ax.spines[side].set_visible(False)
+    import matplotlib.ticker
+   
+    COLORS = {"No rebalancing": "#2a78d6", "Greedy": "#eb6834"}
+    INK, MUTED, GRID, SURFACE = "#0b0b0b", "#52514e", "#e4e3df", "#fcfcfb"
+
+    def style(ax):
+        ax.set_facecolor(SURFACE)
+        for side in ["top", "right"]:
+            ax.spines[side].set_visible(False)
+        for side in ["left", "bottom"]:
+            ax.spines[side].set_color(GRID)
+        ax.tick_params(colors = MUTED)
+        ax.yaxis.grid(True, color = GRID, linewidth = 0.8)
+        ax.set_axisbelow(True)
+
+    steps = np.arange(1, len(rewards) + 1) * BikeRebalanceEnv.STEPS_PER_DAY
+    r = pd.Series(rewards)
+    short = r.rolling(200, min_periods = 50).mean()
+    trend = r.rolling(2000, min_periods = 500).mean()
+
+    fig, ax = plt.subplots(figsize = (7, 4), facecolor = SURFACE)
+    style(ax)
+    ax.plot(steps, short, color = "#7a4fc9", linewidth = 1, alpha = 0.35)
+    ax.plot(steps, trend, color = "#7a4fc9", linewidth = 2.2)
+    ax.annotate("Q-learning", (steps[-1], trend.iloc[-1]), xytext = (6, 0), textcoords = "offset points",
+                va = "center", color = INK)
+    for name, value in baselines_train.items():
+        ax.axhline(value, color = COLORS[name], linewidth = 2, linestyle = "--")
+        ax.annotate(name, (0, value), xytext = (4, 4), textcoords = "offset points", color = INK)
+    ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v / 1e6:.0f}M"))
+    ax.set_xlabel("Training timesteps", color = MUTED)
+    ax.set_ylabel("Episode reward", color = MUTED)
+    ax.set_title("Tabular Q-learning learning curve on training days", color = INK, loc = "left")
+    ax.text(0.99, 0.02, "thin: 200-episode mean   bold: 2,000-episode mean", transform = ax.transAxes,
+            ha = "right", va = "bottom", color = MUTED, fontsize = 8)
     fig.tight_layout()
     fig.savefig(path, dpi = 200)
+
+
+def baseline_rewards(env):
+    return {n: -(r[:, 1] + env.distance_penalty * r[:, 3]).mean()
+            for n, r in [("No rebalancing", evaluate(no_rebalance, split = "train")),
+                         ("Greedy", evaluate(greedy, split = "train"))]}
 
 
 def main():
@@ -147,16 +177,23 @@ def main():
     p.add_argument("--n-zones", type = int, default = N_ZONES)
     p.add_argument("--split", default = "test", help = "days to evaluate on: test, or train for tuning")
     p.add_argument("--plot", action = "store_true")
+    p.add_argument("--plot-only", action = "store_true", help = "redraw the figure from saved results, no training")
     args = p.parse_args()
 
     env = BikeRebalanceEnv(split = "train")
+    name = f"qlearning_seed{args.seed}"
+    if args.plot_only:
+        FIGURES.mkdir(exist_ok = True)
+        rewards = np.load(RESULTS / f"{name}.npz")["rewards"]
+        plot_curve(rewards, baseline_rewards(env), FIGURES / "qlearning_learning_curve.png")
+        return
+
     zones = make_zones(np.load(DEMAND)["station_ids"], args.n_zones)
     agent = ZoneQAgent(env, zones)
     rewards = train(agent, args.episodes, args.alpha, args.gamma,
                     args.eps_start, args.eps_end, args.eps_fraction, args.seed)
 
     RESULTS.mkdir(exist_ok = True)
-    name = f"qlearning_seed{args.seed}"
     np.savez_compressed(RESULTS / f"{name}.npz", q = agent.q, visits = agent.visits, zones = zones, rewards = rewards)
     with open(RESULTS / f"{name}_rewards.csv", "w", newline = "") as f:
         csv.writer(f).writerows([["episode", "reward"], *enumerate(rewards.round(2))])
@@ -168,10 +205,7 @@ def main():
 
     if args.plot:
         FIGURES.mkdir(exist_ok = True)
-        base = {n: -(r[:, 1] + env.distance_penalty * r[:, 3]).mean()
-                for n, r in [("No rebalancing", evaluate(no_rebalance, split = "train")),
-                             ("Greedy", evaluate(greedy, split = "train"))]}
-        plot_curve(rewards, base, FIGURES / "qlearning_learning_curve.png")
+        plot_curve(rewards, baseline_rewards(env), FIGURES / "qlearning_learning_curve.png")
 
 
 if __name__ == "__main__":
