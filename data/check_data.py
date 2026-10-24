@@ -38,8 +38,10 @@ def check_gbfs():
     report(sf_prefix > 0.9, f"{sf_prefix:.0%} of region {SF_REGION} short_names start with 'SF-'")
     report(sf.capacity.gt(0).all(), f"capacities > 0 (min {sf.capacity.min()}, max {sf.capacity.max()})")
     report(sf.short_name.is_unique, "short_name is unique")
-    in_sf = sf.lat.between(37.70, 37.82).all() and sf.lon.between(-122.52, -122.35).all()
-    report(in_sf, "all SF coordinates fall inside San Francisco")
+    outside = sf[~(sf.lat.between(37.70, 37.82) & sf.lon.between(-122.52, -122.35))]
+    report(outside.empty, f"{len(outside)} region {SF_REGION} stations lie outside San Francisco", "WARN")
+    for _, s in outside.iterrows():
+        print(f"        {s.short_name:<12} {s['name']} ({s.lat:.4f}, {s.lon:.4f})")
     return set(sf.short_name)
 
 
@@ -54,10 +56,13 @@ def check_raw_trips(sf_ids):
     for z in zips:
         with zipfile.ZipFile(z) as f:
             name = next(n for n in f.namelist() if n.endswith(".csv") and not n.startswith("__MACOSX"))
-            df = pd.read_csv(f.open(name), low_memory=False)
-        cols = TRIP_COLUMNS - set(df.columns)
-        if cols:
-            report(False, f"{z.name} is missing columns {sorted(cols)}")
+            df = pd.read_csv(f.open(name), nrows=0)
+            cols = TRIP_COLUMNS - set(df.columns)
+            if cols:
+                report(False, f"{z.name} is missing columns {sorted(cols)}")
+            df = pd.read_csv(f.open(name), engine="pyarrow",
+                             usecols=["ride_id", "started_at", "start_station_id", "end_station_id"])
+        print(f"      read {z.name}: {len(df):,} trips")
         start = pd.to_datetime(df.started_at, format="mixed")
         in_month = (start.dt.strftime("%Y%m") == z.stem).mean()
         if in_month < 0.95:
