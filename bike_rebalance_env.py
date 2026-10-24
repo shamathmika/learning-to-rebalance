@@ -82,7 +82,10 @@ class BikeRebalanceEnv(gym.Env):
         km = self.distance_km[self._van_location, next_station]
         self._van_location = next_station
 
-        transfer = int(np.clip(transfer, -self._van_load, self.VAN_CAPACITY - self._van_load))
+        bikes = self._bikes_per_station[next_station]
+        free_docks = self.capacity[next_station] - bikes
+        transfer = int(np.clip(transfer, -min(self._van_load, free_docks),
+                               min(self.VAN_CAPACITY - self._van_load, bikes)))
         self._bikes_per_station[next_station] -= transfer
         self._van_load += transfer
 
