@@ -225,3 +225,4 @@ data/processed/
 *.gdoc
 .DS_Store
 models/
+results/

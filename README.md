@@ -21,3 +21,10 @@ python data/build_demand.py          # per-station departures/arrivals per 30-mi
 python test_env.py                   # env checks
 python baselines.py                  # no-rebalancing and greedy on held-out test days
 ```
+
+## DQN
+
+```
+python train_dqn.py --seed 0         # 1M steps, saves results/dqn_seed0.zip and prints test-day results
+python plot_results.py --seed 0      # figures/ learning curve and test lost-trip bars, prints results table
+```
