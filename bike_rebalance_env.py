@@ -1,6 +1,10 @@
+from pathlib import Path
+
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
+
+DEMAND = Path(__file__).parent / "data" / "processed" / "demand_top20.npz"
 
 
 class BikeRebalanceEnv(gym.Env):
@@ -23,17 +27,23 @@ class BikeRebalanceEnv(gym.Env):
 
     metadata = {"render_modes": []}
 
-    N_STATIONS = 15  # replace once we finalize number of stations
-    STEPS_PER_DAY = 48  # number of discrete time steps in one simulated day
-    VAN_CAPACITY = 20  # placeholder
-    MAX_TRANSFER = 10  # placeholder (might be redundant --> step() already clips to van_load/VAN_CAPACITY, 
-                                    # so this could just be set to VAN_CAPACITY instead of tracking it separately)
-    MAX_BIKES_PER_STATION = 20 # use data to adjust this value
+    STEPS_PER_DAY = 48
+    VAN_CAPACITY = 20
+    MAX_TRANSFER = 10
 
-    def __init__(self):
+    def __init__(self, split = "train", demand_path = DEMAND):
         super().__init__()
+        data = np.load(demand_path)
+        days = data["is_test"] if split == "test" else ~data["is_test"]
+        self.departures = data["departures"][days]
+        self.arrivals = data["arrivals"][days]
+        self.dates = data["dates"][days]
+        self.capacity = data["capacity"].astype(np.int32)
+        self.N_STATIONS = len(self.capacity)
+        self.MAX_BIKES_PER_STATION = int(self.capacity.max())
+
         self.observation_space = spaces.Dict({
-                "bikes_per_station": spaces.Box(low = 0, high = self.MAX_BIKES_PER_STATION, 
+                "bikes_per_station": spaces.Box(low = 0, high = self.MAX_BIKES_PER_STATION,
                                                 shape = (self.N_STATIONS,), dtype = np.int32,),
                 "van_location": spaces.Discrete(self.N_STATIONS),
                 "van_load": spaces.Discrete(self.VAN_CAPACITY + 1),
@@ -47,32 +57,35 @@ class BikeRebalanceEnv(gym.Env):
         self._van_location = 0
         self._van_load = 0
         self._time_step = 0
+        self._day = 0
 
     def reset(self, *, seed = None, options = None):
         super().reset(seed = seed)
+        if options and "day" in options:
+            self._day = options["day"]
+        else:
+            self._day = int(self.np_random.integers(len(self.dates)))
 
-        # placeholder --> random starting bike counts instead of a real replayed day's opening state 
-        # Swap this for the real per-station starting counts once the data pipeline is ready
-        self._bikes_per_station = self.np_random.integers(0, self.MAX_BIKES_PER_STATION, 
-                                                          size = self.N_STATIONS, dtype = np.int32)
+        # TODO: real opening counts are unknown, half full is assumed
+        self._bikes_per_station = self.capacity // 2
         self._van_location = 0
         self._van_load = 0
         self._time_step = 0
-        return self._get_obs(), {}
+        return self._get_obs(), {"date": self.dates[self._day]}
 
     def step(self, action):
         next_station, transfer_raw = action
         transfer = int(transfer_raw) - self.MAX_TRANSFER  # undo the offset
 
         # updates the environment’s state
-        # placeholder --> moves the van and applies the transfer, clipped to valid ranges, but doesn't replay real 
+        # placeholder --> moves the van and applies the transfer, clipped to valid ranges, but doesn't replay real
         # trip demand yet
         # Swap this for real lost-trip counting once the station list and trip data are ready
         self._van_location = int(next_station)
 
         transfer = int(np.clip(transfer, -self._van_load, self.VAN_CAPACITY - self._van_load))
         self._bikes_per_station[self._van_location] -= transfer
-        self._bikes_per_station = np.clip(self._bikes_per_station, 0, self.MAX_BIKES_PER_STATION)
+        self._bikes_per_station = np.clip(self._bikes_per_station, 0, self.capacity).astype(np.int32)
         self._van_load += transfer
 
         self._time_step += 1
@@ -89,5 +102,5 @@ class BikeRebalanceEnv(gym.Env):
             "bikes_per_station": self._bikes_per_station.copy(),
             "van_location": self._van_location,
             "van_load": self._van_load,
-            "time_step": self._time_step,
+            "time_step": min(self._time_step, self.STEPS_PER_DAY - 1),
         }
