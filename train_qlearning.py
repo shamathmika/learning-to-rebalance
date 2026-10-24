@@ -117,12 +117,11 @@ def train(agent, episodes, alpha, gamma, eps_start, eps_end, eps_fraction, seed)
 
 
 def plot_curve(rewards, baselines_train, path):
-    """Same look as plot_results.py's DQN curve, plus a longer-window trend line."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import matplotlib.ticker
-    # same look as plot_results.py (copied so this script does not need stable-baselines3)
+   
     COLORS = {"No rebalancing": "#2a78d6", "Greedy": "#eb6834"}
     INK, MUTED, GRID, SURFACE = "#0b0b0b", "#52514e", "#e4e3df", "#fcfcfb"
 
