@@ -40,6 +40,7 @@ class BikeRebalanceEnv(gym.Env):
         self.arrivals = data["arrivals"][days]
         self.weekdays = data["weekday"][days]
         self.dates = data["dates"][days]
+        self.station_ids = data["station_ids"]
         self.capacity = data["capacity"].astype(np.int32)
         self.distance_km = data["distance_km"]
         self.distance_penalty = distance_penalty
@@ -107,7 +108,7 @@ class BikeRebalanceEnv(gym.Env):
 
         reward = -lost - self.distance_penalty * km
         info = {"lost": lost, "lost_empty": int(lost_empty.sum()), "lost_full": int(lost_full.sum()),
-                "km": km, "transferred": abs(transfer)}
+                "lost_by_station": lost_empty + lost_full, "km": km, "transferred": abs(transfer)}
         return self._get_obs(), reward, terminated, truncated, info
 
     def _get_obs(self):

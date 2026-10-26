@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 
+import numpy as np
 from stable_baselines3 import DQN
 from stable_baselines3.common.monitor import Monitor
 
@@ -47,7 +48,9 @@ def main():
     model.learn(total_timesteps = args.timesteps, progress_bar = False)
     model.save(RESULTS / name)
 
-    print(summarize(f"{name:>12}", evaluate(dqn_policy(model))))
+    rows, heat = evaluate(dqn_policy(model), return_heat = True)
+    np.savez_compressed(RESULTS / f"{name}_test.npz", rows = rows, heat = heat)
+    print(summarize(f"{name:>12}", rows))
 
 
 if __name__ == "__main__":

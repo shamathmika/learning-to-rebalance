@@ -14,20 +14,24 @@ def greedy(obs, env):
     return np.array([np.argmax(fill), 2 * env.MAX_TRANSFER])
 
 
-def evaluate(policy, split = "test"):
+def evaluate(policy, split = "test", return_heat = False):
     env = BikeRebalanceEnv(split = split)
     rows = []
+    heat = np.zeros((len(env.dates), env.STEPS_PER_DAY, env.N_STATIONS), dtype = np.int16)
     for day in range(len(env.dates)):
         obs, _ = env.reset(options = {"day": day})
-        lost = km = 0
+        lost = km = t = 0
         done = False
         while not done:
             obs, _, done, _, info = env.step(policy(obs, env))
+            heat[day, t] = info["lost_by_station"]
+            t += 1
             lost += info["lost"]
             km += info["km"]
         demand = env.departures[day].sum() + env.arrivals[day].sum()
         rows.append((env.weekdays[day], lost, demand, km))
-    return np.array(rows, dtype = float)
+    rows = np.array(rows, dtype = float)
+    return (rows, heat) if return_heat else rows
 
 
 def summarize(name, rows):
