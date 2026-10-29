@@ -25,8 +25,17 @@ python baselines.py                  # no-rebalancing and greedy on held-out tes
 ## DQN
 
 ```
-python train_dqn.py --seed 0         # 1M steps, saves results/dqn_seed0.zip and prints test-day results
-python plot_results.py --seed 0      # figures/ learning curve and test lost-trip bars, prints results table
+python train_dqn.py --seed 0                               # DQN, 1M steps, saves model and test results to results/
+python train_dqn.py --seed 0 --double                      # Double DQN
+python train_dqn.py --seed 0 --balance-weekends            # sample weekend days as often as weekdays in training
+python plot_results.py                                     # needs all 4 variants for seeds 0-1-2; writes figures/
+```
+
+All 12 runs in parallel:
+
+```
+for seed in 0 1 2; do for flags in "" "--double" "--balance-weekends" "--double --balance-weekends"; do
+  OMP_NUM_THREADS=1 python train_dqn.py --seed $seed $flags & done; done; wait
 ```
 
 ## Tabular Q-learning
