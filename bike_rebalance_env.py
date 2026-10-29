@@ -32,7 +32,7 @@ class BikeRebalanceEnv(gym.Env):
     VAN_CAPACITY = 20
     MAX_TRANSFER = 10
 
-    def __init__(self, split = "train", demand_path = DEMAND, distance_penalty = 0.1):
+    def __init__(self, split = "train", demand_path = DEMAND, distance_penalty = 0.1, balance_weekends = False):
         super().__init__()
         data = np.load(demand_path)
         days = data["is_test"] if split == "test" else ~data["is_test"]
@@ -46,6 +46,11 @@ class BikeRebalanceEnv(gym.Env):
         self.distance_penalty = distance_penalty
         self.N_STATIONS = len(self.capacity)
         self.MAX_BIKES_PER_STATION = int(self.capacity.max())
+
+        self.day_probs = None
+        if balance_weekends:
+            weights = np.where(self.weekdays, 1.0, self.weekdays.sum() / (~self.weekdays).sum())
+            self.day_probs = weights / weights.sum()
 
         self.observation_space = spaces.Dict({
                 "bikes_per_station": spaces.Box(low = 0, high = self.MAX_BIKES_PER_STATION,
@@ -69,8 +74,10 @@ class BikeRebalanceEnv(gym.Env):
         super().reset(seed = seed)
         if options and "day" in options:
             self._day = options["day"]
-        else:
+        elif self.day_probs is None:
             self._day = int(self.np_random.integers(len(self.dates)))
+        else:
+            self._day = int(self.np_random.choice(len(self.dates), p = self.day_probs))
 
         # TODO: real opening counts are unknown, half full is assumed
         self._bikes_per_station = self.capacity // 2

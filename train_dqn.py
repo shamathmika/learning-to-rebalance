@@ -40,8 +40,8 @@ class DoubleDQN(DQN):
         self.logger.record("train/loss", np.mean(losses))
 
 
-def run_name(double, seed):
-    return f"{'double' if double else 'dqn'}_seed{seed}"
+def run_name(double, balance_weekends, seed):
+    return f"{'double' if double else 'dqn'}{'_wb' if balance_weekends else ''}_seed{seed}"
 
 
 def dqn_policy(model):
@@ -58,11 +58,12 @@ def main():
     p.add_argument("--timesteps", type = int, default = 1_000_000)
     p.add_argument("--seed", type = int, default = 0)
     p.add_argument("--double", action = "store_true")
+    p.add_argument("--balance-weekends", action = "store_true")
     args = p.parse_args()
 
     RESULTS.mkdir(exist_ok = True)
-    name = run_name(args.double, args.seed)
-    env = Monitor(make_dqn_env(split = "train"), str(RESULTS / name))
+    name = run_name(args.double, args.balance_weekends, args.seed)
+    env = Monitor(make_dqn_env(split = "train", balance_weekends = args.balance_weekends), str(RESULTS / name))
 
     algo = DoubleDQN if args.double else DQN
     model = algo(
@@ -85,7 +86,7 @@ def main():
 
     rows, heat = evaluate(dqn_policy(model), return_heat = True)
     np.savez_compressed(RESULTS / f"{name}_test.npz", rows = rows, heat = heat)
-    print(summarize(f"{name:>12}", rows))
+    print(summarize(f"{name:>16}", rows))
 
 
 if __name__ == "__main__":
