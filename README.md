@@ -38,6 +38,25 @@ for seed in 0 1 2; do for flags in "" "--double" "--balance-weekends" "--double 
   OMP_NUM_THREADS=1 python train_dqn.py --seed $seed $flags & done; done; wait
 ```
 
+## PPO
+
+```
+python train_ppo.py --seed 0                               # PPO, 1M steps, 8 envs, saves model, training log and test results to results/
+python train_ppo.py --seed 0 --balance-weekends            # sample weekend days as often as weekdays in training
+python train_ppo.py --seed 0 --ent-coef 0                  # ablation: no entropy bonus
+python plot_ppo.py                                         # plots each variant with all of seeds 0-1-2 done; writes figures/ppo_*.png
+python analyze_ppo.py --run ppo_wb_ent0.01_seed0           # step-level behavior of one run vs. no rebalancing
+```
+
+All 9 runs in parallel:
+
+```
+for seed in 0 1 2; do for flags in "" "--balance-weekends" "--ent-coef 0"; do
+  OMP_NUM_THREADS=1 python train_ppo.py --seed $seed $flags & done; done; wait
+```
+
+PPO sees the same normalized, one-hot observation as DQN but keeps the env's `MultiDiscrete([station, transfer])` action, so the policy has two factored heads instead of one 420-way output. Exploration comes from the entropy bonus (`--ent-coef`) rather than epsilon-greedy.
+
 ## Tabular Q-learning
 
 ```
