@@ -1,5 +1,9 @@
 #Step-level behavior of the saved PPO model vs. no_rebalance on the test days
 
+#   python analyze_ppo.py                                   # models/ppo_preliminary
+#   python analyze_ppo.py --run ppo_wb_ent0.01_seed0        # a train_ppo.py run in results/
+
+import argparse
 import sys
 from pathlib import Path
 
@@ -10,9 +14,15 @@ from stable_baselines3 import PPO
 sys.path.insert(0, str(Path.cwd()))
 from baselines import no_rebalance
 from bike_rebalance_env import BikeRebalanceEnv
+from train_ppo import RESULTS, ppo_policy
 
-model = PPO.load("models/ppo_preliminary", device = "cpu")
-ppo = lambda o, e: model.predict(o, deterministic = True)[0]
+parser = argparse.ArgumentParser()
+parser.add_argument("--run", default = None)
+args = parser.parse_args()
+
+model_path = RESULTS / args.run if args.run else Path("models/ppo_preliminary")
+model = PPO.load(model_path, device = "cpu")
+ppo = ppo_policy(model, raw_obs = args.run is None)
 env = BikeRebalanceEnv(split = "test")
 names = pd.read_csv("data/processed/stations.csv").name.head(env.N_STATIONS).to_numpy()
 
@@ -36,7 +46,7 @@ n = len(env.dates)
 base, p = rollout(no_rebalance), rollout(ppo)
 assert len(p) == n * env.STEPS_PER_DAY
 
-print(f"model: models/ppo_preliminary.zip, {n} test days, deterministic policy\n")
+print(f"model: {model_path}.zip, {n} test days, deterministic policy\n")
 
 print("1. Where the gain comes from (lost trips/day, weekday days only)")
 wk = lambda df: df[df.weekday]
