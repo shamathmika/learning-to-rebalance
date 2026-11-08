@@ -60,7 +60,20 @@ PPO sees the same normalized, one-hot observation as DQN but keeps the env's `Mu
 ## Tabular Q-learning
 
 ```
-python train_qlearning.py --seed 0 --plot   # 100k training days (~3 min), prints test-day results, saves figures/qlearning_learning_curve.png
+python train_qlearning.py --seed 0                                       # 100k training days (~3 min), saves Q-table and test results to results/
+python train_qlearning.py --seed 0 --balance-weekends                    # sample weekend days as often as weekdays in training
+python train_qlearning.py --seed 0 --fine-time                           # split the midday time bucket at 12pm and 3pm (9,216 states)
+python train_qlearning.py --seed 0 --alpha-decay                         # decay the learning rate linearly to 0.005
+python train_qlearning.py --seed 0 --eval-only --split train             # score a saved run on training days, no retraining
+python plot_qlearning.py                                                 # needs all 6 variants for seeds 0-1-2; writes figures/qlearning_*.png
+```
+
+The reported variant (`--balance-weekends --fine-time`) had the lowest lost trips on training days. Results vary a lot by seed, so always compare means over seeds.
+
+## All methods
+
+```
+python compare_methods.py                                                # needs DQN, PPO and Q-learning test results in results/; writes figures/method_comparison.png
 ```
 
 Stations are grouped into 3 zones by location (k-means). The state is, per zone, whether a station is near empty (<=15%) or near full (>=85%), plus the van's zone, its load (empty / partial / full), a time-of-day bucket and the weekday flag (6,912 states). Actions are wait, or go to a zone and pick up at its fullest station or drop off at its emptiest (7 actions). Hyperparameters (3 zones, gamma 0.9, 100k episodes) were chosen by results on the training days.

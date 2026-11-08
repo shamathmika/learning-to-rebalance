@@ -28,6 +28,13 @@ N_ZONES = 3
 NEAR_EMPTY, NEAR_FULL = 0.15, 0.85
 # time-of-day buckets in 30-min steps: night, early, morning peak, midday, evening peak, late
 TIME_EDGES = [12, 16, 20, 32, 40]  # 6am, 8am, 10am, 4pm, 8pm
+FINE_TIME_EDGES = [12, 16, 20, 24, 30, 32, 40]  # also splits midday at 12pm and 3pm
+ALPHA_END = 0.005  # final learning rate with --alpha-decay
+
+
+def run_name(balance_weekends, fine_time, alpha_decay, seed):
+    return (f"qlearning{'_wb' if balance_weekends else ''}{'_fine' if fine_time else ''}"
+            f"{'_ad' if alpha_decay else ''}_seed{seed}")
 
 
 def make_zones(station_ids, n_zones = N_ZONES, seed = 0):
@@ -48,13 +55,14 @@ def make_zones(station_ids, n_zones = N_ZONES, seed = 0):
 
 
 class ZoneQAgent:
-    def __init__(self, env, zones):
+    def __init__(self, env, zones, time_edges = TIME_EDGES):
         self.env = env
         self.zones = zones
+        self.time_edges = time_edges
         self.n_zones = n = int(zones.max()) + 1
         self.members = [np.flatnonzero(zones == z) for z in range(n)]
         self.N_ACTIONS = 1 + 2 * n  # wait, then (pickup, dropoff) per zone
-        self.n_states = 4 ** n * n * 3 * (len(TIME_EDGES) + 1) * 2
+        self.n_states = 4 ** n * n * 3 * (len(time_edges) + 1) * 2
         self.q = np.zeros((self.n_states, self.N_ACTIONS))
         self.visits = np.zeros(self.n_states, dtype = np.int64)
 
@@ -66,10 +74,10 @@ class ZoneQAgent:
             s = s * 4 + risk
         load = obs["van_load"]
         load_level = 0 if load == 0 else (2 if load > self.env.VAN_CAPACITY // 2 else 1)
-        time_bucket = int(np.searchsorted(TIME_EDGES, obs["time_step"], side = "right"))
+        time_bucket = int(np.searchsorted(self.time_edges, obs["time_step"], side = "right"))
         s = s * self.n_zones + int(self.zones[obs["van_location"]])
         s = s * 3 + load_level
-        s = s * (len(TIME_EDGES) + 1) + time_bucket
+        s = s * (len(self.time_edges) + 1) + time_bucket
         s = s * 2 + int(obs["weekday"])
         return s
 
@@ -94,13 +102,14 @@ class ZoneQAgent:
         return self.to_env_action(self.greedy_action(self.state(obs)), obs)
 
 
-def train(agent, episodes, alpha, gamma, eps_start, eps_end, eps_fraction, seed):
+def train(agent, episodes, alpha, alpha_end, gamma, eps_start, eps_end, eps_fraction, seed):
     env = agent.env
     rng = np.random.default_rng(seed)
     rewards = []
     decay = int(episodes * eps_fraction)
     for ep in range(episodes):
         eps = eps_end + (eps_start - eps_end) * max(0.0, 1 - ep / decay)
+        lr = alpha_end + (alpha - alpha_end) * (1 - ep / episodes)
         obs, _ = env.reset(seed = seed + ep if ep == 0 else None)
         s = agent.state(obs)
         total, done = 0.0, False
@@ -109,7 +118,7 @@ def train(agent, episodes, alpha, gamma, eps_start, eps_end, eps_fraction, seed)
             obs, r, done, _, _ = env.step(agent.to_env_action(a, obs))
             s2 = agent.state(obs)
             target = r if done else r + gamma * agent.q[s2].max()
-            agent.q[s, a] += alpha * (target - agent.q[s, a])
+            agent.q[s, a] += lr * (target - agent.q[s, a])
             agent.visits[s] += 1
             s, total = s2, total + r
         rewards.append(total)
@@ -176,34 +185,47 @@ def main():
     p.add_argument("--seed", type = int, default = 0)
     p.add_argument("--n-zones", type = int, default = N_ZONES)
     p.add_argument("--split", default = "test", help = "days to evaluate on: test, or train for tuning")
+    p.add_argument("--balance-weekends", action = "store_true")
+    p.add_argument("--fine-time", action = "store_true", help = "split the midday time bucket at 12pm and 3pm")
+    p.add_argument("--alpha-decay", action = "store_true", help = f"decay alpha linearly to {ALPHA_END}")
+    p.add_argument("--eval-only", action = "store_true", help = "evaluate a saved run on --split, no training")
     p.add_argument("--plot", action = "store_true")
     p.add_argument("--plot-only", action = "store_true", help = "redraw the figure from saved results, no training")
     args = p.parse_args()
 
-    env = BikeRebalanceEnv(split = "train")
-    name = f"qlearning_seed{args.seed}"
+    env = BikeRebalanceEnv(split = "train", balance_weekends = args.balance_weekends)
+    name = run_name(args.balance_weekends, args.fine_time, args.alpha_decay, args.seed)
     if args.plot_only:
         FIGURES.mkdir(exist_ok = True)
         rewards = np.load(RESULTS / f"{name}.npz")["rewards"]
         plot_curve(rewards, baseline_rewards(env), FIGURES / "qlearning_learning_curve.png")
         return
 
-    zones = make_zones(np.load(DEMAND)["station_ids"], args.n_zones)
-    agent = ZoneQAgent(env, zones)
-    rewards = train(agent, args.episodes, args.alpha, args.gamma,
-                    args.eps_start, args.eps_end, args.eps_fraction, args.seed)
-
+    time_edges = FINE_TIME_EDGES if args.fine_time else TIME_EDGES
     RESULTS.mkdir(exist_ok = True)
-    np.savez_compressed(RESULTS / f"{name}.npz", q = agent.q, visits = agent.visits, zones = zones, rewards = rewards)
-    with open(RESULTS / f"{name}_rewards.csv", "w", newline = "") as f:
-        csv.writer(f).writerows([["episode", "reward"], *enumerate(rewards.round(2))])
+    if args.eval_only:
+        saved = np.load(RESULTS / f"{name}.npz")
+        agent = ZoneQAgent(env, saved["zones"], time_edges)
+        agent.q, agent.visits = saved["q"], saved["visits"]
+    else:
+        zones = make_zones(np.load(DEMAND)["station_ids"], args.n_zones)
+        agent = ZoneQAgent(env, zones, time_edges)
+        rewards = train(agent, args.episodes, args.alpha, ALPHA_END if args.alpha_decay else args.alpha, args.gamma,
+                        args.eps_start, args.eps_end, args.eps_fraction, args.seed)
 
-    print(f"zones: {np.bincount(zones).tolist()} stations, "
-          f"{(agent.visits > 0).sum():,} of {agent.n_states:,} states visited")
-    print(f"last 500 training episodes: mean reward {rewards[-500:].mean():.1f}")
-    print(summarize(f"{name:>12}", evaluate(agent.policy, split = args.split)))
+        np.savez_compressed(RESULTS / f"{name}.npz", q = agent.q, visits = agent.visits, zones = zones, rewards = rewards)
+        with open(RESULTS / f"{name}_rewards.csv", "w", newline = "") as f:
+            csv.writer(f).writerows([["episode", "reward"], *enumerate(rewards.round(2))])
 
-    if args.plot:
+        print(f"zones: {np.bincount(zones).tolist()} stations, "
+              f"{(agent.visits > 0).sum():,} of {agent.n_states:,} states visited")
+        print(f"last 500 training episodes: mean reward {rewards[-500:].mean():.1f}")
+
+    rows, heat = evaluate(agent.policy, split = args.split, return_heat = True)
+    np.savez_compressed(RESULTS / f"{name}_{args.split}.npz", rows = rows, heat = heat)
+    print(summarize(f"{name:>12}", rows))
+
+    if args.plot and not args.eval_only:
         FIGURES.mkdir(exist_ok = True)
         plot_curve(rewards, baseline_rewards(env), FIGURES / "qlearning_learning_curve.png")
 
