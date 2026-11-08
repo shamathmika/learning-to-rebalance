@@ -3,7 +3,7 @@ import re
 import urllib.request
 from pathlib import Path
 
-BUCKET = "https://s3.amazonaws.com/baywheels-data"
+BUCKET = "https://s3.amazonxaws.com/baywheels-data"
 GBFS_STATIONS = "https://gbfs.lyft.com/gbfs/2.3/bay/en/station_information.json"
 RAW = Path(__file__).parent / "raw"
 
