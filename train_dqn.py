@@ -62,9 +62,9 @@ class DuelingPolicy(DQNPolicy):
         return DuelingQNetwork(**net_args).to(self.device)
 
 
-def run_name(double, balance_weekends, seed, dueling = False):
-    return (f"{'double' if double else 'dqn'}{'_duel' if dueling else ''}"
-            f"{'_wb' if balance_weekends else ''}_seed{seed}")
+def run_name(double, balance_weekends, seed, dueling = False, distance_penalty = 0.1):
+    return (f"{'double' if double else 'dqn'}{'_duel' if dueling else ''}{'_wb' if balance_weekends else ''}"
+            f"{f'_dp{distance_penalty:g}' if distance_penalty != 0.1 else ''}_seed{seed}")
 
 
 def dqn_policy(model):
@@ -83,11 +83,13 @@ def main():
     p.add_argument("--double", action = "store_true")
     p.add_argument("--dueling", action = "store_true")
     p.add_argument("--balance-weekends", action = "store_true")
+    p.add_argument("--distance-penalty", type = float, default = 0.1)
     args = p.parse_args()
 
     RESULTS.mkdir(exist_ok = True)
-    name = run_name(args.double, args.balance_weekends, args.seed, args.dueling)
-    env = Monitor(make_dqn_env(split = "train", balance_weekends = args.balance_weekends), str(RESULTS / name))
+    name = run_name(args.double, args.balance_weekends, args.seed, args.dueling, args.distance_penalty)
+    env = Monitor(make_dqn_env(split = "train", balance_weekends = args.balance_weekends,
+                                distance_penalty = args.distance_penalty), str(RESULTS / name))
 
     algo = DoubleDQN if args.double else DQN
     model = algo(
@@ -106,7 +108,7 @@ def main():
         verbose = 0,
     )
     model.learn(total_timesteps = args.timesteps, progress_bar = False)
-    model.save(RESULTS / name)
+    model.save(RESULTS / f"{name}.zip")
 
     rows, heat = evaluate(dqn_policy(model), return_heat = True)
     np.savez_compressed(RESULTS / f"{name}_test.npz", rows = rows, heat = heat)
