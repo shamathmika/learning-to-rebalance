@@ -5,6 +5,9 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 from stable_baselines3 import DQN
+from stable_baselines3.common.torch_layers import create_mlp
+from stable_baselines3.dqn.policies import DQNPolicy, QNetwork
+from torch import nn
 from stable_baselines3.common.monitor import Monitor
 
 from baselines import evaluate, summarize
@@ -40,8 +43,28 @@ class DoubleDQN(DQN):
         self.logger.record("train/loss", np.mean(losses))
 
 
-def run_name(double, balance_weekends, seed):
-    return f"{'double' if double else 'dqn'}{'_wb' if balance_weekends else ''}_seed{seed}"
+class DuelingQNetwork(QNetwork):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.q_net = nn.Sequential(*create_mlp(self.features_dim, -1, self.net_arch, self.activation_fn))
+        self.value = nn.Linear(self.net_arch[-1], 1)
+        self.advantage = nn.Linear(self.net_arch[-1], int(self.action_space.n))
+
+    def forward(self, obs):
+        h = self.q_net(self.extract_features(obs, self.features_extractor))
+        a = self.advantage(h)
+        return self.value(h) + a - a.mean(dim = 1, keepdim = True)
+
+
+class DuelingPolicy(DQNPolicy):
+    def make_q_net(self):
+        net_args = self._update_features_extractor(self.net_args, features_extractor = None)
+        return DuelingQNetwork(**net_args).to(self.device)
+
+
+def run_name(double, balance_weekends, seed, dueling = False):
+    return (f"{'double' if double else 'dqn'}{'_duel' if dueling else ''}"
+            f"{'_wb' if balance_weekends else ''}_seed{seed}")
 
 
 def dqn_policy(model):
@@ -58,16 +81,17 @@ def main():
     p.add_argument("--timesteps", type = int, default = 1_000_000)
     p.add_argument("--seed", type = int, default = 0)
     p.add_argument("--double", action = "store_true")
+    p.add_argument("--dueling", action = "store_true")
     p.add_argument("--balance-weekends", action = "store_true")
     args = p.parse_args()
 
     RESULTS.mkdir(exist_ok = True)
-    name = run_name(args.double, args.balance_weekends, args.seed)
+    name = run_name(args.double, args.balance_weekends, args.seed, args.dueling)
     env = Monitor(make_dqn_env(split = "train", balance_weekends = args.balance_weekends), str(RESULTS / name))
 
     algo = DoubleDQN if args.double else DQN
     model = algo(
-        "MlpPolicy", env,
+        DuelingPolicy if args.dueling else "MlpPolicy", env,
         learning_rate = 1e-4,
         buffer_size = 100_000,
         learning_starts = 5_000,
