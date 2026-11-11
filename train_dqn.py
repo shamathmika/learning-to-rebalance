@@ -11,6 +11,7 @@ from torch import nn
 from stable_baselines3.common.monitor import Monitor
 
 from baselines import evaluate, summarize
+from bike_rebalance_env import DEMAND
 from wrappers import make_dqn_env
 
 RESULTS = Path(__file__).parent / "results"
@@ -62,13 +63,18 @@ class DuelingPolicy(DQNPolicy):
         return DuelingQNetwork(**net_args).to(self.device)
 
 
-def run_name(double, balance_weekends, seed, dueling = False, distance_penalty = 0.1):
+def demand_path(stations):
+    return DEMAND.with_name(f"demand_top{stations}.npz")
+
+
+def run_name(double, balance_weekends, seed, dueling = False, distance_penalty = 0.1, stations = 20):
     return (f"{'double' if double else 'dqn'}{'_duel' if dueling else ''}{'_wb' if balance_weekends else ''}"
-            f"{f'_dp{distance_penalty:g}' if distance_penalty != 0.1 else ''}_seed{seed}")
+            f"{f'_dp{distance_penalty:g}' if distance_penalty != 0.1 else ''}"
+            f"{f'_n{stations}' if stations != 20 else ''}_seed{seed}")
 
 
-def dqn_policy(model):
-    flat = make_dqn_env(split = "test")
+def dqn_policy(model, stations = 20):
+    flat = make_dqn_env(split = "test", demand_path = demand_path(stations))
 
     def policy(obs, env):
         action, _ = model.predict(flat.observation(obs), deterministic = True)
@@ -84,12 +90,13 @@ def main():
     p.add_argument("--dueling", action = "store_true")
     p.add_argument("--balance-weekends", action = "store_true")
     p.add_argument("--distance-penalty", type = float, default = 0.1)
+    p.add_argument("--stations", type = int, default = 20)
     args = p.parse_args()
 
     RESULTS.mkdir(exist_ok = True)
-    name = run_name(args.double, args.balance_weekends, args.seed, args.dueling, args.distance_penalty)
+    name = run_name(args.double, args.balance_weekends, args.seed, args.dueling, args.distance_penalty, args.stations)
     env = Monitor(make_dqn_env(split = "train", balance_weekends = args.balance_weekends,
-                                distance_penalty = args.distance_penalty), str(RESULTS / name))
+                                distance_penalty = args.distance_penalty, demand_path = demand_path(args.stations)), str(RESULTS / name))
 
     algo = DoubleDQN if args.double else DQN
     model = algo(
@@ -110,7 +117,8 @@ def main():
     model.learn(total_timesteps = args.timesteps, progress_bar = False)
     model.save(RESULTS / f"{name}.zip")
 
-    rows, heat = evaluate(dqn_policy(model), return_heat = True)
+    rows, heat = evaluate(dqn_policy(model, args.stations), return_heat = True,
+                         demand_path = demand_path(args.stations))
     np.savez_compressed(RESULTS / f"{name}_test.npz", rows = rows, heat = heat)
     print(summarize(f"{name:>16}", rows))
 

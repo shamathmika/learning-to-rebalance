@@ -1,6 +1,6 @@
 import numpy as np
 
-from bike_rebalance_env import BikeRebalanceEnv
+from bike_rebalance_env import DEMAND, BikeRebalanceEnv
 
 
 def no_rebalance(obs, env):
@@ -14,8 +14,8 @@ def greedy(obs, env):
     return np.array([np.argmax(fill), 2 * env.MAX_TRANSFER])
 
 
-def evaluate(policy, split = "test", return_heat = False):
-    env = BikeRebalanceEnv(split = split)
+def evaluate(policy, split = "test", return_heat = False, demand_path = DEMAND):
+    env = BikeRebalanceEnv(split = split, demand_path = demand_path)
     rows = []
     heat = np.zeros((len(env.dates), env.STEPS_PER_DAY, env.N_STATIONS), dtype = np.int16)
     for day in range(len(env.dates)):
