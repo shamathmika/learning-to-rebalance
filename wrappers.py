@@ -16,19 +16,25 @@ class FlatAction(gym.ActionWrapper):
 
 
 class FlatObservation(gym.ObservationWrapper):
-    def __init__(self, env):
+    # weekend_time --> separate time-step one-hots for weekdays and weekends, so weekend timing doesn't
+    # have to be learned as an interaction with the single weekday flag
+    def __init__(self, env, weekend_time = False):
         super().__init__(env)
         e = env.unwrapped
-        size = 2 * e.N_STATIONS + 1 + e.STEPS_PER_DAY + 1
+        self.weekend_time = weekend_time
+        size = 2 * e.N_STATIONS + 1 + e.STEPS_PER_DAY * (2 if weekend_time else 1) + 1
         self.observation_space = spaces.Box(0.0, 1.0, shape = (size,), dtype = np.float32)
 
     def observation(self, obs):
         e = self.env.unwrapped
+        time = np.eye(e.STEPS_PER_DAY)[obs["time_step"]]
+        if self.weekend_time:
+            time = np.concatenate([time * obs["weekday"], time * (1 - obs["weekday"])])
         return np.concatenate([
             obs["bikes_per_station"] / e.capacity,
             np.eye(e.N_STATIONS)[obs["van_location"]],
             [obs["van_load"] / e.VAN_CAPACITY],
-            np.eye(e.STEPS_PER_DAY)[obs["time_step"]],
+            time,
             [obs["weekday"]],
         ]).astype(np.float32)
 
