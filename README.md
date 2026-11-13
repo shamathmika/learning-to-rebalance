@@ -55,15 +55,32 @@ for seed in 0 1 2; do
 python train_ppo.py --seed 0                               # PPO, 1M steps, 8 envs, saves model, training log and test results to results/
 python train_ppo.py --seed 0 --balance-weekends            # sample weekend days as often as weekdays in training
 python train_ppo.py --seed 0 --ent-coef 0                  # ablation: no entropy bonus
+python train_ppo.py --seed 0 --raw-obs                     # ablation: raw Dict observation (bike counts, MultiInputPolicy), same hyperparameters
+python train_ppo.py --seed 0 --timesteps 3000000           # longer run, also saves a checkpoint every 1M steps
+python train_ppo.py --seed 0 --timesteps 3000000 --lr-decay       # learning rate decays linearly to 0
+python train_ppo.py --seed 0 --timesteps 3000000 --weekend-time   # separate weekday / weekend time-of-day one-hots
 python plot_ppo.py                                         # plots each variant with all of seeds 0-1-2 done; writes figures/ppo_*.png
+                                                           # (1M variants, ppo_3m_* for the 3M runs, ppo_obs_ablation.png for raw vs. normalized obs)
+python compare_ppo.py                                      # test-day table for all PPO variants + per-checkpoint convergence of 3M runs
 python analyze_ppo.py --run ppo_wb_ent0.01_seed0           # step-level behavior of one run vs. no rebalancing
 ```
+
+Run names encode the flags and, when it isn't 1M, the step count (e.g. `ppo_lrdecay_ent0.01_3M_seed0`), so longer runs don't overwrite the 1M results.
 
 All 9 runs in parallel:
 
 ```
 for seed in 0 1 2; do for flags in "" "--balance-weekends" "--ent-coef 0"; do
   OMP_NUM_THREADS=1 python train_ppo.py --seed $seed $flags & done; done; wait
+```
+
+Raw-obs ablation and the 3M-step runs (12 runs, ~1.5 h on 8 cores):
+
+```
+for seed in 0 1 2; do
+  OMP_NUM_THREADS=1 python train_ppo.py --seed $seed --raw-obs &
+  for flags in "" "--lr-decay" "--weekend-time"; do
+    OMP_NUM_THREADS=1 python train_ppo.py --seed $seed --timesteps 3000000 $flags & done; done; wait
 ```
 
 PPO sees the same normalized, one-hot observation as DQN but keeps the env's `MultiDiscrete([station, transfer])` action, so the policy has two factored heads instead of one 420-way output. Exploration comes from the entropy bonus (`--ent-coef`) rather than epsilon-greedy.
