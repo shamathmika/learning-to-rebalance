@@ -28,14 +28,22 @@ python baselines.py                  # no-rebalancing and greedy on held-out tes
 python train_dqn.py --seed 0                               # DQN, 1M steps, saves model and test results to results/
 python train_dqn.py --seed 0 --double                      # Double DQN
 python train_dqn.py --seed 0 --balance-weekends            # sample weekend days as often as weekdays in training
-python plot_results.py                                     # needs all 4 variants for seeds 0-1-2; writes figures/
+python train_dqn.py --seed 0 --dueling                     # Dueling DQN
+python train_dqn.py --seed 0 --distance-penalty 0.3        # reward = -lost - 0.3 * km (default 0.1)
+python train_dqn.py --seed 0 --stations 50                 # needs data/build_demand.py --n-stations 50
+python plot_results.py                                     # needs every run below; writes figures/ and prints tables
 ```
 
-All 12 runs in parallel:
+All runs in parallel (45 runs, about 45 min on 18 cores):
 
 ```
-for seed in 0 1 2; do for flags in "" "--double" "--balance-weekends" "--double --balance-weekends"; do
-  OMP_NUM_THREADS=1 python train_dqn.py --seed $seed $flags & done; done; wait
+python data/build_demand.py --n-stations 50
+for seed in 0 1 2 3 4; do
+  for flags in "" "--double" "--balance-weekends" "--double --balance-weekends" "--dueling --balance-weekends"; do
+    OMP_NUM_THREADS=1 python train_dqn.py --seed $seed $flags & done; done
+for seed in 0 1 2; do
+  for flags in "--distance-penalty 0" "--distance-penalty 0.3" "--distance-penalty 1" "--stations 50"; do
+    OMP_NUM_THREADS=1 python train_dqn.py --seed $seed --balance-weekends $flags & done; done; wait
 ```
 
 ## PPO
