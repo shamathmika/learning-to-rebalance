@@ -67,10 +67,14 @@ def demand_path(stations):
     return DEMAND.with_name(f"demand_top{stations}.npz")
 
 
-def run_name(double, balance_weekends, seed, dueling = False, distance_penalty = 0.1, stations = 20):
+def run_name(double, balance_weekends, seed, dueling = False, distance_penalty = 0.1, stations = 20,
+             learning_rate = 1e-4, exploration_fraction = 0.3, timesteps = 1_000_000):
     return (f"{'double' if double else 'dqn'}{'_duel' if dueling else ''}{'_wb' if balance_weekends else ''}"
             f"{f'_dp{distance_penalty:g}' if distance_penalty != 0.1 else ''}"
-            f"{f'_n{stations}' if stations != 20 else ''}_seed{seed}")
+            f"{f'_n{stations}' if stations != 20 else ''}"
+            f"{f'_lr{learning_rate:g}' if learning_rate != 1e-4 else ''}"
+            f"{f'_eps{exploration_fraction:g}' if exploration_fraction != 0.3 else ''}"
+            f"{f'_{timesteps / 1e6:g}M' if timesteps != 1_000_000 else ''}_seed{seed}")
 
 
 def dqn_policy(model, stations = 20):
@@ -91,24 +95,27 @@ def main():
     p.add_argument("--balance-weekends", action = "store_true")
     p.add_argument("--distance-penalty", type = float, default = 0.1)
     p.add_argument("--stations", type = int, default = 20)
+    p.add_argument("--lr", type = float, default = 1e-4)
+    p.add_argument("--exploration-fraction", type = float, default = 0.3)
     args = p.parse_args()
 
     RESULTS.mkdir(exist_ok = True)
-    name = run_name(args.double, args.balance_weekends, args.seed, args.dueling, args.distance_penalty, args.stations)
+    name = run_name(args.double, args.balance_weekends, args.seed, args.dueling, args.distance_penalty, args.stations,
+                    args.lr, args.exploration_fraction, args.timesteps)
     env = Monitor(make_dqn_env(split = "train", balance_weekends = args.balance_weekends,
                                 distance_penalty = args.distance_penalty, demand_path = demand_path(args.stations)), str(RESULTS / name))
 
     algo = DoubleDQN if args.double else DQN
     model = algo(
         DuelingPolicy if args.dueling else "MlpPolicy", env,
-        learning_rate = 1e-4,
+        learning_rate = args.lr,
         buffer_size = 100_000,
         learning_starts = 5_000,
         batch_size = 64,
         gamma = 0.99,
         train_freq = 4,
         target_update_interval = 1_000,
-        exploration_fraction = 0.3,
+        exploration_fraction = args.exploration_fraction,
         exploration_final_eps = 0.05,
         policy_kwargs = {"net_arch": [256, 256]},
         seed = args.seed,
