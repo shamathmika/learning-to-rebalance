@@ -31,10 +31,12 @@ python train_dqn.py --seed 0 --balance-weekends            # sample weekend days
 python train_dqn.py --seed 0 --dueling                     # Dueling DQN
 python train_dqn.py --seed 0 --distance-penalty 0.3        # reward = -lost - 0.3 * km (default 0.1)
 python train_dqn.py --seed 0 --stations 50                 # needs data/build_demand.py --n-stations 50
+python train_dqn.py --seed 0 --lr 3e-4                     # learning rate (default 1e-4)
+python train_dqn.py --seed 0 --exploration-fraction 0.1    # share of training over which epsilon decays (default 0.3)
 python plot_results.py                                     # needs every run below; writes figures/ and prints tables
 ```
 
-All runs in parallel (45 runs, about 45 min on 18 cores):
+All runs in parallel (60 runs, about 1.5 hours on 18 cores):
 
 ```
 python data/build_demand.py --n-stations 50
@@ -42,7 +44,8 @@ for seed in 0 1 2 3 4; do
   for flags in "" "--double" "--balance-weekends" "--double --balance-weekends" "--dueling --balance-weekends"; do
     OMP_NUM_THREADS=1 python train_dqn.py --seed $seed $flags & done; done
 for seed in 0 1 2; do
-  for flags in "--distance-penalty 0" "--distance-penalty 0.3" "--distance-penalty 1" "--stations 50"; do
+  for flags in "--distance-penalty 0" "--distance-penalty 0.3" "--distance-penalty 1" "--stations 50" \
+      "--lr 3e-5" "--lr 3e-4" "--exploration-fraction 0.1" "--exploration-fraction 0.5" "--stations 50 --timesteps 3000000"; do
     OMP_NUM_THREADS=1 python train_dqn.py --seed $seed --balance-weekends $flags & done; done; wait
 ```
 

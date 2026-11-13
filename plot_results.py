@@ -23,10 +23,18 @@ VARIANTS = {
     "Dueling DQN + weekend balancing": {"dueling": True, "balance_weekends": True},
 }
 DISTANCE_PENALTIES = [0, 0.1, 0.3, 1]
+SENSITIVITY = {
+    "default (lr 1e-4, ε over 30%)": {},
+    "lr 3e-5": {"learning_rate": 3e-5},
+    "lr 3e-4": {"learning_rate": 3e-4},
+    "ε over 10%": {"exploration_fraction": 0.1},
+    "ε over 50%": {"exploration_fraction": 0.5},
+}
 COLORS = {
     "No rebalancing": "#2a78d6", "Greedy": "#eb6834", "DQN": "#1baf7a", "Double DQN": "#eda100",
     "DQN + weekend balancing": "#e87ba4", "Double DQN + weekend balancing": "#008300",
     "Dueling DQN + weekend balancing": "#6250d6",
+    "DQN + weekend balancing, 1M steps": "#e87ba4", "DQN + weekend balancing, 3M steps": "#6250d6",
 }
 INK, MUTED, GRID, SURFACE = "#0b0b0b", "#52514e", "#e4e3df", "#fcfcfb"
 BLUES = LinearSegmentedColormap.from_list(
@@ -44,8 +52,9 @@ def style(ax):
     ax.set_axisbelow(True)
 
 
-def daily_reward(rows):
-    return -(rows[:, 1] + 0.1 * rows[:, 3]).mean()
+def daily_reward(rows, balanced = False):
+    r = -(rows[:, 1] + 0.1 * rows[:, 3])
+    return (r[rows[:, 0] == 1].mean() + r[rows[:, 0] == 0].mean()) / 2 if balanced else r.mean()
 
 
 def test_rows(seeds, **kwargs):
@@ -67,24 +76,30 @@ def load_runs():
     return runs
 
 
-def learning_curves(runs, baselines_train):
-    grid = np.linspace(20_000, 1_000_000, 200)
+def monitors(seeds, **kwargs):
+    kwargs = {"double": False, "balance_weekends": False, **kwargs}
+    return [pd.read_csv(RESULTS / f"{run_name(seed = s, **kwargs)}.monitor.csv", skiprows = 1) for s in seeds]
+
+
+def learning_curves(runs, baselines_train, steps = 1_000_000, title = None, filename = "dqn_learning_curve.png"):
+    grid = np.linspace(20_000, steps, 200)
     fig, ax = plt.subplots(figsize = (8, 4.5), facecolor = SURFACE)
     style(ax)
     for name, value in baselines_train.items():
         ax.axhline(value, color = COLORS[name], linewidth = 2, linestyle = "--", label = name)
     for label, run in runs.items():
-        curves = [np.interp(grid, m.l.cumsum(), m.r.rolling(200, min_periods = 50).mean()) for m in run["monitors"]]
+        g = grid[grid <= min(m.l.sum() for m in run["monitors"])]
+        curves = [np.interp(g, m.l.cumsum(), m.r.rolling(200, min_periods = 50).mean()) for m in run["monitors"]]
         mean, std = np.mean(curves, axis = 0), np.std(curves, axis = 0)
-        ax.plot(grid, mean, color = COLORS[label], linewidth = 2, label = label)
-        ax.fill_between(grid, mean - std, mean + std, color = COLORS[label], alpha = 0.15, linewidth = 0)
-    ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v / 1000:.0f}k"))
+        ax.plot(g, mean, color = COLORS[label], linewidth = 2, label = label)
+        ax.fill_between(g, mean - std, mean + std, color = COLORS[label], alpha = 0.15, linewidth = 0)
+    ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v / 1e6:g}M" if v >= 1e6 else f"{v / 1000:.0f}k"))
     ax.set_xlabel("Training timesteps", color = MUTED)
     ax.set_ylabel("Episode reward (200-episode mean)", color = MUTED)
-    ax.set_title(f"DQN variants on training days (mean ± std, {len(SEEDS)} seeds)", color = INK, loc = "left")
+    ax.set_title(title or f"DQN variants on training days (mean ± std, {len(SEEDS)} seeds)", color = INK, loc = "left")
     ax.legend(frameon = False, labelcolor = INK, fontsize = 8, loc = "lower right")
     fig.tight_layout()
-    fig.savefig(FIGURES / "dqn_learning_curve.png", dpi = 200)
+    fig.savefig(FIGURES / filename, dpi = 200)
 
 
 def lost_trips_bars(table):
@@ -180,11 +195,21 @@ def main():
 
     sweep = distance_tradeoff(table)
     big = {n: summary([evaluate(p, demand_path = demand_path(50))]) for n, p in baselines.items()}
-    big["DQN + weekend balancing"] = summary(test_rows(SWEEP_SEEDS, balance_weekends = True, stations = 50))
+    for steps in [1_000_000, 3_000_000]:
+        big[f"DQN + weekend balancing, {steps // 1_000_000}M steps"] = summary(
+            test_rows(SWEEP_SEEDS, balance_weekends = True, stations = 50, timesteps = steps))
+    learning_curves(
+        {f"DQN + weekend balancing, {t // 1_000_000}M steps": {"monitors": monitors(SWEEP_SEEDS, balance_weekends = True, stations = 50, timesteps = t)}
+         for t in [1_000_000, 3_000_000]},
+        {n: daily_reward(evaluate(p, split = "train", demand_path = demand_path(50)), balanced = True) for n, p in baselines.items()},
+        steps = 3_000_000, title = f"50 stations, weekend-balanced training days (mean ± std, {len(SWEEP_SEEDS)} seeds)",
+        filename = "dqn_50_stations.png")
+    sensitivity = {n: summary(test_rows(SWEEP_SEEDS, balance_weekends = True, **kw)) for n, kw in SENSITIVITY.items()}
 
     fmt = lambda s: f"{s[0]:.1f} ± {s[1]:.1f}" if s[1] else f"{s[0]:.1f}"
     for title, t in [("20 stations", table),
                      ("DQN + weekend balancing, distance penalty", {f"penalty {dp:g}": s for dp, s in zip(DISTANCE_PENALTIES, sweep)}),
+                     ("DQN + weekend balancing, hyperparameter sensitivity", sensitivity),
                      ("50 stations", big)]:
         print(f"\n{title}\n| Policy | Lost/day | Lost % | Weekday lost/day | Weekend lost/day | Van km/day |")
         print("|---|---|---|---|---|---|")
