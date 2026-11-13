@@ -22,7 +22,7 @@ args = parser.parse_args()
 
 model_path = RESULTS / args.run if args.run else Path("models/ppo_preliminary")
 model = PPO.load(model_path, device = "cpu")
-ppo = ppo_policy(model, raw_obs = args.run is None)
+ppo = ppo_policy(model, raw_obs = args.run is None or "_raw_" in args.run, weekend_time = args.run is not None and "_wtime_" in args.run)
 env = BikeRebalanceEnv(split = "test")
 names = pd.read_csv("data/processed/stations.csv").name.head(env.N_STATIONS).to_numpy()
 
