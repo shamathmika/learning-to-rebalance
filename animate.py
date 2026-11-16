@@ -21,8 +21,24 @@ LOST = "#e34948"
 COLORS = {"No rebalancing": "#2a78d6", "Greedy": "#eb6834", "Q-learning": "#00a3b8", "PPO": "#7a5af5", "DQN": "#e87ba4"}
 
 
+def run_names(seed):
+    return {
+        "Q-learning": train_qlearning.run_name(True, True, False, seed),
+        "PPO": train_ppo.run_name(False, 0.01, seed),
+        "DQN": train_dqn.run_name(False, True, seed),
+    }
+
+
+def typical_weekday(env, seed):
+    lost = {"No rebalancing": evaluate(no_rebalance)[:, 1], "Greedy": evaluate(greedy)[:, 1]}
+    lost.update({n: np.load(train_dqn.RESULTS / f"{r}_test.npz")["rows"][:, 1] for n, r in run_names(seed).items()})
+    weekdays = np.flatnonzero(env.weekdays)
+    gaps = sum(np.abs(l[weekdays] - l[weekdays].mean()) / l[weekdays].mean() for l in lost.values())
+    return int(weekdays[np.argmin(gaps)])
+
+
 def policies(env, seed):
-    q_name = train_qlearning.run_name(True, True, False, seed)
+    q_name = run_names(seed)["Q-learning"]
     saved = np.load(train_qlearning.RESULTS / f"{q_name}.npz")
     agent = train_qlearning.ZoneQAgent(env, saved["zones"], train_qlearning.FINE_TIME_EDGES)
     agent.q, agent.visits = saved["q"], saved["visits"]
@@ -52,13 +68,11 @@ def replay(policy, env, day):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--seed", type = int, default = 0)
-    p.add_argument("--day", type = int, help = "test-day index, default is the weekday with median no-rebalancing losses")
+    p.add_argument("--day", type = int, help = "test-day index, default is the weekday where every policy is closest to its weekday average")
     args = p.parse_args()
 
     env = BikeRebalanceEnv(split = "test")
-    base = evaluate(no_rebalance)[:, 1]
-    weekdays = np.flatnonzero(env.weekdays)
-    day = args.day if args.day is not None else int(weekdays[np.argsort(base[weekdays])[len(weekdays) // 2]])
+    day = args.day if args.day is not None else typical_weekday(env, args.seed)
     stations = pd.read_csv(DEMAND.parent / "stations.csv").set_index("station_id").loc[env.station_ids]
     x, y = stations.lon.to_numpy(), stations.lat.to_numpy()
 
