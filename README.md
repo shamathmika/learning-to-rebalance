@@ -34,6 +34,7 @@ python train_dqn.py --seed 0 --stations 50                 # needs data/build_de
 python train_dqn.py --seed 0 --lr 3e-4                     # learning rate (default 1e-4)
 python train_dqn.py --seed 0 --exploration-fraction 0.1    # share of training over which epsilon decays (default 0.3)
 python plot_results.py                                     # needs every run below; writes figures/ and prints tables
+python animate.py                                          # replays one test weekday under all 5 policies (needs seed-0 runs of the reported Q-learning, PPO and DQN variants) -> figures/day_replay.gif
 ```
 
 All runs in parallel (60 runs, about 1.5 hours on 18 cores):
