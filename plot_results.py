@@ -88,7 +88,7 @@ def learning_curves(runs, baselines_train, steps = 1_000_000, title = None, file
     for name, value in baselines_train.items():
         ax.axhline(value, color = COLORS[name], linewidth = 2, linestyle = "--", label = name)
     for label, run in runs.items():
-        g = grid[grid <= min(m.l.sum(for m in run["monitors"])]
+        g = grid[grid <= min(m.l.sum() for m in run["monitors"])]
         curves = [np.interp(g, m.l.cumsum(), m.r.rolling(200, min_periods = 50).mean()) for m in run["monitors"]]
         mean, std = np.mean(curves, axis = 0), np.std(curves, axis = 0)
         ax.plot(g, mean, color = COLORS[label], linewidth = 2, label = label)
