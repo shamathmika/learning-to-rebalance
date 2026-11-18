@@ -26,10 +26,12 @@ def make_ppo_env(raw_obs = False, weekend_time = False, **kwargs):
     return env if raw_obs else FlatObservation(env, weekend_time = weekend_time)
 
 
-def run_name(balance_weekends, ent_coef, seed, raw_obs = False, lr_decay = False, weekend_time = False, timesteps = 1_000_000):
+def run_name(balance_weekends, ent_coef, seed, raw_obs = False, lr_decay = False, weekend_time = False, timesteps = 1_000_000, distance_penalty = 0.1):
     tags = [tag for tag, on in [("raw", raw_obs), ("wb", balance_weekends), ("lrdecay", lr_decay), ("wtime", weekend_time)] if on]
+    # same _dp suffix as train_dqn.py, only when the penalty isn't the default 0.1
+    dp = f"_dp{distance_penalty:g}" if distance_penalty != 0.1 else ""
     steps = "" if timesteps == 1_000_000 else f"_{timesteps / 1e6:g}M"
-    return "ppo" + "".join(f"_{t}" for t in tags) + f"_ent{ent_coef:g}{steps}_seed{seed}"
+    return "ppo" + "".join(f"_{t}" for t in tags) + f"_ent{ent_coef:g}{dp}{steps}_seed{seed}"
 
 
 def ppo_policy(model, raw_obs = False, weekend_time = False):
@@ -51,13 +53,14 @@ def main():
     p.add_argument("--raw-obs", action = "store_true", help = "ablation: raw Dict observation + MultiInputPolicy")
     p.add_argument("--lr-decay", action = "store_true", help = "decay the learning rate linearly to 0 over training")
     p.add_argument("--weekend-time", action = "store_true", help = "separate weekday/weekend time-step one-hots")
+    p.add_argument("--distance-penalty", type = float, default = 0.1, help = "reward = -lost - penalty * km")
     args = p.parse_args()
     if args.raw_obs and args.weekend_time:
         p.error("--weekend-time only applies to the normalized observation")
 
     RESULTS.mkdir(exist_ok = True)
-    name = run_name(args.balance_weekends, args.ent_coef, args.seed, args.raw_obs, args.lr_decay, args.weekend_time, args.timesteps)
-    env_kwargs = {"split": "train", "balance_weekends": args.balance_weekends, "raw_obs": args.raw_obs, "weekend_time": args.weekend_time}
+    name = run_name(args.balance_weekends, args.ent_coef, args.seed, args.raw_obs, args.lr_decay, args.weekend_time, args.timesteps, args.distance_penalty)
+    env_kwargs = {"split": "train", "balance_weekends": args.balance_weekends, "raw_obs": args.raw_obs, "weekend_time": args.weekend_time, "distance_penalty": args.distance_penalty}
     env = make_vec_env(make_ppo_env, n_envs = args.n_envs, seed = args.seed, env_kwargs = env_kwargs)
     env = VecMonitor(env, str(RESULTS / name))
 
