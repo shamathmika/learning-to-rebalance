@@ -11,17 +11,22 @@ from plot_results import summary
 from train_ppo import CHECKPOINT_EVERY, RESULTS, ppo_policy, run_name
 
 SEEDS = [0, 1, 2]
+# the headline PPO 3M run has 5 seeds to match DQN's headline, every other variant has 3
+VARIANT_SEEDS = {"PPO 3M": [0, 1, 2, 3, 4]}
 VARIANTS = {
     "PPO 1M": {},
     "PPO 1M, raw obs": {"raw_obs": True},
     "PPO 3M": {"timesteps": 3_000_000},
     "PPO 3M + LR decay": {"timesteps": 3_000_000, "lr_decay": True},
     "PPO 3M + weekend time": {"timesteps": 3_000_000, "weekend_time": True},
+    "PPO 3M, distance penalty 0": {"timesteps": 3_000_000, "distance_penalty": 0},
+    "PPO 3M, distance penalty 0.3": {"timesteps": 3_000_000, "distance_penalty": 0.3},
+    "PPO 3M, distance penalty 1": {"timesteps": 3_000_000, "distance_penalty": 1},
 }
 
 
-def names(kwargs):
-    return [run_name(False, 0.01, s, **kwargs) for s in SEEDS]
+def names(label, kwargs):
+    return [run_name(False, 0.01, s, **kwargs) for s in VARIANT_SEEDS.get(label, SEEDS)]
 
 
 def fmt(s):
@@ -57,14 +62,14 @@ def convergence(label, kwargs):
     raw, wtime = kwargs.get("raw_obs", False), kwargs.get("weekend_time", False)
     for end in range(CHECKPOINT_EVERY, kwargs["timesteps"] + 1, CHECKPOINT_EVERY):
         rows = []
-        for name in names(kwargs):
+        for name in names(label, kwargs):
             if end == kwargs["timesteps"]:
                 rows.append(np.load(RESULTS / f"{name}_test.npz")["rows"])
             else:
                 model = PPO.load(RESULTS / f"{name}_ckpt" / f"ppo_{end}_steps", device = "cpu")
                 rows.append(evaluate(ppo_policy(model, raw, wtime)))
         s = summary(rows)
-        stats = np.array([window_stats(name, end) for name in names(kwargs)])
+        stats = np.array([window_stats(name, end) for name in names(label, kwargs)])
         mean, std = stats.mean(axis = 0), stats.std(axis = 0)
         print(f"| {end / 1e6:g}M | {fmt(s['lost'])} | {fmt(s['weekday'])} | {fmt(s['weekend'])}"
               f" | {mean[0]:.1f} ± {std[0]:.1f} | {mean[1]:.4f} ± {std[1]:.4f} | {mean[2]:.3f} ± {std[2]:.3f} |")
@@ -73,8 +78,8 @@ def convergence(label, kwargs):
 def main():
     runs = {}
     for label, kwargs in VARIANTS.items():
-        if all((RESULTS / f"{n}_test.npz").exists() for n in names(kwargs)):
-            runs[label] = [np.load(RESULTS / f"{n}_test.npz")["rows"] for n in names(kwargs)]
+        if all((RESULTS / f"{n}_test.npz").exists() for n in names(label, kwargs)):
+            runs[label] = [np.load(RESULTS / f"{n}_test.npz")["rows"] for n in names(label, kwargs)]
         else:
             print(f"skipping {label}: missing runs")
     results_table(runs)
